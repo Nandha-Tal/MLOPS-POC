@@ -1,0 +1,48 @@
+stages:
+  data_ingestion:
+    cmd: python main.py --stage 1
+    deps:
+      - main.py
+      - src/mlops_poc/components/data_ingestion.py
+      - config/config.yaml
+      - config/params.yaml
+      - simulator/metrics_simulator.py
+    outs:
+      - artifacts/data_ingestion/raw_metrics.csv
+      - artifacts/data_ingestion/train.csv
+      - artifacts/data_ingestion/test.csv
+
+  prepare_base_model:
+    cmd: python main.py --stage 2
+    deps:
+      - main.py
+      - src/mlops_poc/components/prepare_base_model.py
+      - config/config.yaml
+      - config/params.yaml
+    outs:
+      - artifacts/prepare_base_model/base_model.joblib
+      - artifacts/prepare_base_model/updated_base_model.joblib
+
+  model_trainer:
+    cmd: python main.py --stage 3
+    deps:
+      - main.py
+      - src/mlops_poc/components/model_trainer.py
+      - artifacts/data_ingestion/train.csv
+      - artifacts/prepare_base_model/updated_base_model.joblib
+      - config/config.yaml
+    outs:
+      - artifacts/model_trainer/anomaly_detector.joblib
+
+  model_evaluation:
+    cmd: python main.py --stage 4
+    deps:
+      - main.py
+      - src/mlops_poc/components/model_evaluation.py
+      - artifacts/model_trainer/anomaly_detector.joblib
+      - artifacts/data_ingestion/test.csv
+      - config/config.yaml
+      - config/params.yaml
+    metrics:
+      - artifacts/model_evaluation/metrics.json:
+          cache: false

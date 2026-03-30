@@ -1,0 +1,104 @@
+groups:
+  - name: k8s-compute
+    rules:
+      - alert: HighCPUUsage
+        expr: 100 - (avg(irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on cluster nodes"
+          description: "CPU usage is {{ $value }}%"
+
+      - alert: CriticalCPUUsage
+        expr: 100 - (avg(irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CRITICAL CPU usage"
+          description: "CPU usage is {{ $value }}%"
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}%"
+
+      - alert: HighDiskIO
+        expr: sum(irate(node_disk_read_bytes_total[5m]) + irate(node_disk_written_bytes_total[5m])) / 1048576 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk I/O"
+          description: "Disk I/O is {{ $value }} MB/s"
+
+  - name: k8s-workloads
+    rules:
+      - alert: PodCrashLooping
+        expr: rate(kube_pod_container_status_restarts_total[15m]) * 60 > 5
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pod {{ $labels.pod }} is crash-looping"
+          description: "Restart rate: {{ $value }}/min"
+
+      - alert: NodeNotReady
+        expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node {{ $labels.node }} is NotReady"
+
+      - alert: HighPendingPods
+        expr: count(kube_pod_status_phase{phase="Pending"}) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} pods stuck in Pending state"
+
+  - name: k8s-application
+    rules:
+      - alert: HighErrorRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HTTP error rate"
+          description: "Error rate is {{ $value }}%"
+
+      - alert: HighRequestLatency
+        expr: histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) * 1000 > 2000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High P99 request latency"
+          description: "P99 latency is {{ $value }}ms"
+
+  - name: mlops-model
+    rules:
+      - alert: MLModelAnomaly
+        expr: mlops_anomaly_score < -0.2
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ML model detected cluster anomaly"
+          description: "Anomaly score is {{ $value }}"
+
+      - alert: MLModelHighAnomalyRate
+        expr: rate(mlops_anomaly_total[10m]) / rate(mlops_predictions_total[10m]) > 0.3
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Anomaly detection rate exceeds 30%"

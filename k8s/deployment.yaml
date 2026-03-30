@@ -1,0 +1,136 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-server
+  namespace: mlops-monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow-server
+  template:
+    metadata:
+      labels:
+        app: mlflow-server
+    spec:
+      containers:
+        - name: mlflow
+          image: python:3.11-slim
+          command: ["bash", "-c"]
+          args:
+            - "pip install mlflow && mlflow server --backend-store-uri sqlite:////mlflow/mlflow.db --default-artifact-root /mlflow/artifacts --host 0.0.0.0 --port 5000"
+          ports:
+            - containerPort: 5000
+          volumeMounts:
+            - name: mlflow-data
+              mountPath: /mlflow
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+      volumes:
+        - name: mlflow-data
+          persistentVolumeClaim:
+            claimName: mlflow-data-pvc
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlops-monitoring-api
+  namespace: mlops-monitoring
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mlops-monitoring-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: mlops-monitoring-api
+    spec:
+      serviceAccountName: mlops-monitoring-sa
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: mlops-monitoring-api
+      containers:
+        - name: api
+          image: mlops-monitoring:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: mlops-config
+            - secretRef:
+                name: mlops-secrets
+          volumeMounts:
+            - name: artifacts
+              mountPath: /app/artifacts
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+      volumes:
+        - name: artifacts
+          persistentVolumeClaim:
+            claimName: mlops-artifacts-pvc
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mlops-retraining
+  namespace: mlops-monitoring
+spec:
+  schedule: "0 */6 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pipeline
+              image: mlops-monitoring:latest
+              command: ["python3", "main.py"]
+              envFrom:
+                - configMapRef:
+                    name: mlops-config
+              volumeMounts:
+                - name: artifacts
+                  mountPath: /app/artifacts
+              resources:
+                requests:
+                  cpu: "500m"
+                  memory: "1Gi"
+                limits:
+                  cpu: "2"
+                  memory: "2Gi"
+          volumes:
+            - name: artifacts
+              persistentVolumeClaim:
+                claimName: mlops-artifacts-pvc

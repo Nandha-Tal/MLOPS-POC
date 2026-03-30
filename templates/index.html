@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>K8s Cluster Monitoring — MLOps POC</title>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --surface2: #21262d;
+    --border: #30363d; --text: #e6edf3; --muted: #8b949e;
+    --green: #3fb950; --yellow: #d29922; --red: #f85149;
+    --blue: #58a6ff; --purple: #bc8cff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; }
+
+  header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 16px 24px; display: flex; align-items: center; justify-content: space-between;
+  }
+  header h1 { font-size: 1.2rem; color: var(--blue); }
+  header .subtitle { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+
+  .badge {
+    padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.05em;
+  }
+  .badge-ok       { background: rgba(63,185,80,0.15);  color: var(--green); border: 1px solid var(--green); }
+  .badge-warning  { background: rgba(210,153,34,0.15); color: var(--yellow); border: 1px solid var(--yellow); }
+  .badge-critical { background: rgba(248,81,73,0.15);  color: var(--red);   border: 1px solid var(--red); }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px 24px; }
+
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 20px; }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px;
+  }
+  .card-title { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
+  .card-value { font-size: 2rem; font-weight: 700; }
+  .card-sub { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
+
+  .progress-bar-bg { background: var(--surface2); border-radius: 4px; height: 6px; margin-top: 10px; }
+  .progress-bar    { height: 6px; border-radius: 4px; transition: width 0.5s ease; }
+
+  /* Anomaly score big display */
+  .score-display {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 24px; text-align: center;
+  }
+  .score-number { font-size: 3.5rem; font-weight: 700; font-family: monospace; }
+
+  /* Alert feed */
+  .alert-feed { max-height: 320px; overflow-y: auto; }
+  .alert-item {
+    display: flex; align-items: flex-start; gap: 10px; padding: 10px;
+    border-bottom: 1px solid var(--border); font-size: 0.8rem;
+  }
+  .alert-item:last-child { border-bottom: none; }
+  .alert-time { color: var(--muted); white-space: nowrap; min-width: 80px; font-size: 0.72rem; }
+  .alert-rules { color: var(--muted); font-size: 0.72rem; margin-top: 2px; }
+
+  /* Pipeline buttons */
+  .btn-group { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .btn {
+    padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface2); color: var(--text); cursor: pointer; font-size: 0.8rem;
+    transition: all 0.2s;
+  }
+  .btn:hover { background: var(--border); }
+  .btn-primary { background: rgba(88,166,255,0.15); border-color: var(--blue); color: var(--blue); }
+  .btn-primary:hover { background: rgba(88,166,255,0.25); }
+  .btn-success { background: rgba(63,185,80,0.15); border-color: var(--green); color: var(--green); }
+
+  /* Metrics table */
+  .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .metric-row { display: flex; justify-content: space-between; padding: 6px 8px; background: var(--surface2); border-radius: 4px; font-size: 0.82rem; }
+  .metric-key { color: var(--muted); }
+  .metric-val { font-weight: 600; font-family: monospace; }
+
+  /* Model metrics */
+  .model-metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .model-metric-card { background: var(--surface2); border-radius: 6px; padding: 12px; text-align: center; }
+  .model-metric-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; }
+  .model-metric-value { font-size: 1.6rem; font-weight: 700; color: var(--blue); font-family: monospace; }
+
+  .refresh-indicator { font-size: 0.7rem; color: var(--muted); }
+  .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin-right: 5px; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .section-title { font-size: 0.9rem; font-weight: 600; color: var(--blue); padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 14px; }
+
+  .pipeline-status { font-size: 0.8rem; color: var(--muted); margin-top: 8px; }
+  .status-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 0.78rem; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot-green { background: var(--green); }
+  .dot-red   { background: var(--red); }
+  .dot-grey  { background: var(--muted); }
+
+  .empty-state { color: var(--muted); font-size: 0.82rem; text-align: center; padding: 24px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>⚙️ K8s Cluster Monitoring — MLOps POC</h1>
+    <div class="subtitle">IsolationForest · MLflow · DVC · Kubeflow · Agentic AI · FastAPI</div>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span class="refresh-indicator"><span class="dot"></span>Auto-refresh 5s</span>
+    <span id="cluster-badge" class="badge badge-ok">OK</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Anomaly Score + Metric Cards -->
+  <div class="grid-4" style="grid-template-columns: 1.2fr 1fr 1fr 1fr;">
+
+    <!-- Anomaly Score -->
+    <div class="score-display">
+      <div class="card-title">Anomaly Score (IsolationForest)</div>
+      <div id="score-number" class="score-number" style="color:var(--green)">—</div>
+      <div id="score-label" class="badge badge-ok" style="display:inline-block;margin-top:10px">OK</div>
+      <div class="card-sub" style="margin-top:8px">More negative = more anomalous · Range [-1, 1]</div>
+      <div id="score-rules" style="margin-top:8px;font-size:0.75rem;color:var(--red)"></div>
+    </div>
+
+    <!-- CPU -->
+    <div class="card">
+      <div class="card-title">CPU Usage</div>
+      <div class="card-value" id="cpu-val">—</div>
+      <div class="card-sub">Node average utilization</div>
+      <div class="progress-bar-bg"><div id="cpu-bar" class="progress-bar" style="background:var(--green);width:0%"></div></div>
+    </div>
+
+    <!-- Memory -->
+    <div class="card">
+      <div class="card-title">Memory Usage</div>
+      <div class="card-value" id="mem-val">—</div>
+      <div class="card-sub">Node average utilization</div>
+      <div class="progress-bar-bg"><div id="mem-bar" class="progress-bar" style="background:var(--green);width:0%"></div></div>
+    </div>
+
+    <!-- Latency -->
+    <div class="card">
+      <div class="card-title">P99 Latency</div>
+      <div class="card-value" id="lat-val">—</div>
+      <div class="card-sub">HTTP request latency</div>
+      <div class="progress-bar-bg"><div id="lat-bar" class="progress-bar" style="background:var(--green);width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- Metrics detail + Alert Feed -->
+  <div class="grid-2">
+
+    <!-- All metrics -->
+    <div class="card">
+      <div class="section-title">Cluster Metrics</div>
+      <div class="metrics-grid" id="metrics-grid">
+        <div class="empty-state">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Alert Feed -->
+    <div class="card">
+      <div class="section-title">Recent Alerts <span id="alert-count" style="font-size:0.75rem;color:var(--muted)"></span></div>
+      <div class="alert-feed" id="alert-feed">
+        <div class="empty-state">No alerts yet — data loads every 5s</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model Metrics + Pipeline -->
+  <div class="grid-2">
+
+    <!-- Model Metrics -->
+    <div class="card">
+      <div class="section-title">Model Performance (MLflow)</div>
+      <div class="model-metrics-grid" id="model-metrics">
+        <div class="empty-state" style="grid-column:span 2">Run the pipeline first: python main.py</div>
+      </div>
+    </div>
+
+    <!-- Pipeline -->
+    <div class="card">
+      <div class="section-title">ML Pipeline</div>
+      <div id="pipeline-artifacts"></div>
+      <div class="btn-group" style="margin-top:14px">
+        <button class="btn btn-primary" onclick="runStage(1)">Stage 1: Ingest</button>
+        <button class="btn btn-primary" onclick="runStage(2)">Stage 2: Prepare</button>
+        <button class="btn btn-primary" onclick="runStage(3)">Stage 3: Train</button>
+        <button class="btn btn-primary" onclick="runStage(4)">Stage 4: Evaluate</button>
+        <button class="btn btn-success" onclick="runAll()">▶ Run All</button>
+      </div>
+      <div id="pipeline-status-msg" class="pipeline-status"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const API = '';
+
+function severityColor(s) {
+  if (s === 'CRITICAL') return 'var(--red)';
+  if (s === 'WARNING')  return 'var(--yellow)';
+  return 'var(--green)';
+}
+function severityClass(s) {
+  if (s === 'CRITICAL') return 'badge-critical';
+  if (s === 'WARNING')  return 'badge-warning';
+  return 'badge-ok';
+}
+
+function barColor(val, warn, crit) {
+  if (val >= crit) return 'var(--red)';
+  if (val >= warn) return 'var(--yellow)';
+  return 'var(--green)';
+}
+
+// ── Anomaly Detection ────────────────────────────────────────────────────────
+async function refreshAnomaly() {
+  try {
+    const r = await fetch(`${API}/alerts/simulate`, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    const d = await r.json();
+    const score = d.anomaly_score;
+    const el = document.getElementById('score-number');
+    el.textContent = score.toFixed(4);
+    el.style.color = severityColor(d.severity);
+
+    const badge = document.getElementById('score-label');
+    badge.textContent = d.severity;
+    badge.className = 'badge ' + severityClass(d.severity);
+
+    document.getElementById('cluster-badge').textContent = d.severity;
+    document.getElementById('cluster-badge').className = 'badge ' + severityClass(d.severity);
+
+    const rules = d.triggered_rules || [];
+    document.getElementById('score-rules').textContent = rules.length ? '⚠ ' + rules.join(' · ') : '';
+  } catch(e) { console.warn('anomaly fetch failed', e); }
+}
+
+// ── Metrics ─────────────────────────────────────────────────────────────────
+async function refreshMetrics() {
+  try {
+    const r = await fetch(`${API}/metrics/summary`);
+    const d = await r.json();
+    const m = d.latest || {};
+
+    const cpu = m.cpu_usage_pct || 0;
+    const mem = m.memory_usage_pct || 0;
+    const lat = m.request_latency_p99_ms || 0;
+    const err = m.error_rate_pct || 0;
+
+    document.getElementById('cpu-val').textContent = cpu.toFixed(1) + '%';
+    document.getElementById('cpu-bar').style.width = Math.min(cpu, 100) + '%';
+    document.getElementById('cpu-bar').style.background = barColor(cpu, 80, 90);
+
+    document.getElementById('mem-val').textContent = mem.toFixed(1) + '%';
+    document.getElementById('mem-bar').style.width = Math.min(mem, 100) + '%';
+    document.getElementById('mem-bar').style.background = barColor(mem, 85, 95);
+
+    document.getElementById('lat-val').textContent = lat.toFixed(0) + 'ms';
+    const latPct = Math.min((lat / 3000) * 100, 100);
+    document.getElementById('lat-bar').style.width = latPct + '%';
+    document.getElementById('lat-bar').style.background = barColor(lat, 1000, 2000);
+
+    const labels = {
+      cpu_usage_pct: 'CPU %', memory_usage_pct: 'Memory %',
+      pod_restart_count: 'Pod Restarts', request_latency_p99_ms: 'P99 Latency (ms)',
+      error_rate_pct: 'Error Rate %', network_bytes_in: 'Net In (B/s)',
+      network_bytes_out: 'Net Out (B/s)', disk_io_read_mbps: 'Disk Read MB/s',
+      disk_io_write_mbps: 'Disk Write MB/s', pod_pending_count: 'Pending Pods',
+      node_not_ready_count: 'NotReady Nodes',
+    };
+    const grid = document.getElementById('metrics-grid');
+    grid.innerHTML = Object.entries(labels).map(([k, label]) => {
+      const val = m[k];
+      const display = val !== undefined ? (typeof val === 'number' ? val.toFixed(2) : val) : '—';
+      return `<div class="metric-row"><span class="metric-key">${label}</span><span class="metric-val">${display}</span></div>`;
+    }).join('');
+  } catch(e) { console.warn('metrics fetch failed', e); }
+}
+
+// ── Alert History ────────────────────────────────────────────────────────────
+async function refreshAlerts() {
+  try {
+    const r = await fetch(`${API}/alerts/history?limit=15`);
+    const d = await r.json();
+    const alerts = d.recent_alerts || [];
+    document.getElementById('alert-count').textContent = `(${d.anomaly_count} anomalies / ${d.total_in_buffer} total)`;
+    const feed = document.getElementById('alert-feed');
+    if (!alerts.length) {
+      feed.innerHTML = '<div class="empty-state">No alerts in history</div>';
+      return;
+    }
+    feed.innerHTML = alerts.map(a => {
+      const t = a.timestamp ? a.timestamp.split('T')[1]?.split('.')[0] || a.timestamp : '—';
+      const rules = (a.triggered_rules || []).join(', ');
+      return `<div class="alert-item">
+        <span class="badge ${severityClass(a.severity)}" style="flex-shrink:0">${a.severity}</span>
+        <div>
+          <div>Score: <strong style="font-family:monospace">${(a.anomaly_score||0).toFixed(4)}</strong></div>
+          ${rules ? `<div class="alert-rules">${rules}</div>` : ''}
+        </div>
+        <span class="alert-time" style="margin-left:auto">${t}</span>
+      </div>`;
+    }).join('');
+  } catch(e) { console.warn('alert fetch failed', e); }
+}
+
+// ── Model Metrics ────────────────────────────────────────────────────────────
+async function refreshModelMetrics() {
+  try {
+    const r = await fetch(`${API}/pipeline/metrics`);
+    const d = await r.json();
+    const m = d.metrics || {};
+    if (!Object.keys(m).length) return;
+    const grid = document.getElementById('model-metrics');
+    const labels = {precision:'Precision', recall:'Recall', f1_score:'F1 Score', roc_auc:'ROC-AUC', anomaly_rate:'Anomaly Rate', score_mean:'Score Mean'};
+    grid.innerHTML = Object.entries(m).map(([k, v]) => `
+      <div class="model-metric-card">
+        <div class="model-metric-label">${labels[k] || k}</div>
+        <div class="model-metric-value">${typeof v === 'number' ? v.toFixed(4) : v}</div>
+      </div>`).join('');
+  } catch(e) {}
+}
+
+// ── Pipeline Status ──────────────────────────────────────────────────────────
+async function refreshPipelineStatus() {
+  try {
+    const r = await fetch(`${API}/pipeline/status`);
+    const d = await r.json();
+    const artifacts = d.artifacts || {};
+    const items = [
+      ['train_data',    'Train Data'],
+      ['base_model',    'Base Model'],
+      ['trained_model', 'Trained Model'],
+      ['metrics',       'Eval Metrics'],
+    ];
+    document.getElementById('pipeline-artifacts').innerHTML = items.map(([k, label]) => {
+      const exists = artifacts[k];
+      return `<div class="status-row">
+        <div class="status-dot ${exists ? 'dot-green' : 'dot-grey'}"></div>
+        <span>${label}</span>
+        <span style="margin-left:auto;color:${exists ? 'var(--green)' : 'var(--muted)'}">
+          ${exists ? '✓ Ready' : '— Missing'}
+        </span>
+      </div>`;
+    }).join('');
+    if (d.status) {
+      const statusColors = {running:'var(--yellow)', completed:'var(--green)', failed:'var(--red)', idle:'var(--muted)'};
+      const c = statusColors[d.status] || 'var(--muted)';
+      document.getElementById('pipeline-status-msg').innerHTML =
+        `Status: <span style="color:${c};font-weight:600">${d.status.toUpperCase()}</span>${d.last_run ? ` · Last run: ${d.last_run.split('T')[0]}` : ''}`;
+    }
+  } catch(e) {}
+}
+
+// ── Pipeline triggers ────────────────────────────────────────────────────────
+async function runStage(n) {
+  document.getElementById('pipeline-status-msg').innerHTML = `<span style="color:var(--yellow)">Starting stage ${n}...</span>`;
+  try {
+    await fetch(`${API}/pipeline/run/${n}`, {method:'POST'});
+    setTimeout(refreshPipelineStatus, 1000);
+  } catch(e) {}
+}
+
+async function runAll() {
+  document.getElementById('pipeline-status-msg').innerHTML = `<span style="color:var(--yellow)">Starting full pipeline...</span>`;
+  try {
+    await fetch(`${API}/pipeline/run/all`, {method:'POST'});
+    setTimeout(refreshPipelineStatus, 1000);
+  } catch(e) {}
+}
+
+// ── Refresh loop ─────────────────────────────────────────────────────────────
+async function refreshAll() {
+  await Promise.allSettled([
+    refreshAnomaly(),
+    refreshMetrics(),
+    refreshAlerts(),
+    refreshModelMetrics(),
+    refreshPipelineStatus(),
+  ]);
+}
+
+refreshAll();
+setInterval(refreshAll, 5000);
+</script>
+</body>
+</html>

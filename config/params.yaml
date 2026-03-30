@@ -1,0 +1,31 @@
+isolation_forest:
+  n_estimators: 100
+  contamination: 0.05
+  max_samples: auto
+  random_state: 42
+  bootstrap: false
+
+scaler:
+  type: StandardScaler
+
+anomaly_thresholds:
+  ml_score_warning: -0.05
+  ml_score_critical: -0.15
+  cpu_warning_pct: 80.0
+  cpu_critical_pct: 90.0
+  memory_warning_pct: 85.0
+  memory_critical_pct: 95.0
+  latency_warning_ms: 1000.0
+  latency_critical_ms: 2000.0
+  error_rate_warning_pct: 5.0
+  error_rate_critical_pct: 15.0
+  pod_restart_warning: 5
+  pod_restart_critical: 10
+  pod_pending_warning: 5
+  pod_pending_critical: 15
+  node_not_ready_critical: 1
+
+training:
+  test_size: 0.2
+  random_state: 42
+  min_normal_samples: 100

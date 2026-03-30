@@ -1,0 +1,45 @@
+features:
+  cpu_usage_pct:
+    dtype: float
+    range: [0, 100]
+    promql: "100 - (avg(irate(node_cpu_seconds_total{mode='idle'}[5m])) * 100)"
+  memory_usage_pct:
+    dtype: float
+    range: [0, 100]
+    promql: "(1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100"
+  pod_restart_count:
+    dtype: int
+    range: [0, 1000]
+    promql: "sum(kube_pod_container_status_restarts_total)"
+  request_latency_p99_ms:
+    dtype: float
+    range: [0, 30000]
+    promql: "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le)) * 1000"
+  error_rate_pct:
+    dtype: float
+    range: [0, 100]
+    promql: "sum(rate(http_requests_total{status=~'5..'}[5m])) / sum(rate(http_requests_total[5m])) * 100"
+  network_bytes_in:
+    dtype: float
+    range: [0, 10000000000]
+    promql: "sum(irate(node_network_receive_bytes_total[5m]))"
+  network_bytes_out:
+    dtype: float
+    range: [0, 10000000000]
+    promql: "sum(irate(node_network_transmit_bytes_total[5m]))"
+  disk_io_read_mbps:
+    dtype: float
+    range: [0, 10000]
+    promql: "sum(irate(node_disk_read_bytes_total[5m])) / 1048576"
+  disk_io_write_mbps:
+    dtype: float
+    range: [0, 10000]
+    promql: "sum(irate(node_disk_written_bytes_total[5m])) / 1048576"
+  pod_pending_count:
+    dtype: int
+    range: [0, 1000]
+    promql: "count(kube_pod_status_phase{phase='Pending'})"
+  node_not_ready_count:
+    dtype: int
+    range: [0, 100]
+    promql: "count(kube_node_status_condition{condition='Ready',status='true'} == 0)"
